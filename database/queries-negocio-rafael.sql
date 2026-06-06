@@ -1,0 +1,2 @@
+-- Arquivo reservado para Rafael.
+-- Objetivo: criar pelo menos 20 queries SQL comentadas respondendo perguntas comerciais reais.
