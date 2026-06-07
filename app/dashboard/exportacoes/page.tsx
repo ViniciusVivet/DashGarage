@@ -32,6 +32,12 @@ const exports = [
 ];
 
 type ExportRow = Record<string, string | number | boolean | null>;
+type ToastKind = "success" | "error" | "warning";
+
+type Toast = {
+  kind: ToastKind;
+  text: string;
+};
 
 function toCsv(rows: ExportRow[]) {
   if (rows.length === 0) return "";
@@ -60,36 +66,67 @@ function downloadCsv(filename: string, csv: string) {
   URL.revokeObjectURL(url);
 }
 
+function humanizeError(error: string) {
+  if (error.includes("violates row-level security")) {
+    return "Seu usuario nao tem permissao para exportar estes dados.";
+  }
+
+  return error;
+}
+
+function ToastMessage({ toast }: { toast: Toast }) {
+  const styles: Record<ToastKind, string> = {
+    success: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    error: "border-red-200 bg-red-50 text-red-800",
+    warning: "border-amber-200 bg-amber-50 text-amber-800",
+  };
+
+  return (
+    <div
+      aria-live="polite"
+      className={`fixed right-5 top-5 z-50 max-w-sm rounded-md border px-4 py-3 text-sm shadow-soft ${styles[toast.kind]}`}
+      role="status"
+    >
+      {toast.text}
+    </div>
+  );
+}
+
 export default function ExportacoesPage() {
-  const [message, setMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<Toast | null>(null);
   const [loadingTable, setLoadingTable] = useState<string | null>(null);
+
+  function showToast(kind: ToastKind, text: string) {
+    setToast({ kind, text });
+    window.setTimeout(() => setToast(null), 4200);
+  }
 
   async function handleExport(table: string) {
     if (!isSupabaseConfigured || !supabase) {
-      setMessage("Supabase ainda nao configurado.");
+      showToast("error", "Supabase ainda nao configurado.");
       return;
     }
 
     setLoadingTable(table);
-    setMessage(null);
+    setToast(null);
 
     const { data, error } = await supabase.from(table).select("*");
 
     if (error) {
-      setMessage(error.message);
+      showToast("error", humanizeError(error.message));
       setLoadingTable(null);
       return;
     }
 
     const rows = (data ?? []) as ExportRow[];
     if (rows.length === 0) {
-      setMessage(`A tabela ${table} ainda nao tem registros para exportar.`);
+      showToast("warning", `A tabela ${table} ainda nao tem registros.`);
       setLoadingTable(null);
       return;
     }
 
     downloadCsv(`${table}.csv`, toCsv(rows));
-    setMessage(`${rows.length} registros exportados de ${table}.`);
+    showToast("success", `${rows.length} registros exportados de ${table}.`);
     setLoadingTable(null);
   }
 
@@ -107,11 +144,7 @@ export default function ExportacoesPage() {
         </p>
       </div>
 
-      {message ? (
-        <p className="rounded-md border border-line bg-white px-4 py-3 text-sm text-graphite shadow-soft">
-          {message}
-        </p>
-      ) : null}
+      {toast ? <ToastMessage toast={toast} /> : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
         {exports.map((item) => (

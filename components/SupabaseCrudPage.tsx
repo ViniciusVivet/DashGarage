@@ -32,6 +32,12 @@ type ColumnConfig = {
 
 type RowData = Record<string, string | number | boolean | null | undefined>;
 type ReferenceMap = Record<string, SelectOption[]>;
+type ToastKind = "success" | "error" | "warning" | "info";
+
+type Toast = {
+  kind: ToastKind;
+  text: string;
+};
 
 type SupabaseCrudPageProps = {
   title: string;
@@ -101,6 +107,45 @@ function downloadCsv(filename: string, csv: string) {
   URL.revokeObjectURL(url);
 }
 
+function humanizeError(error: string) {
+  if (error.includes("violates foreign key constraint")) {
+    return "Este registro esta ligado a outro cadastro. Em vez de remover, altere o status ou remova primeiro os registros relacionados.";
+  }
+
+  if (error.includes("violates row-level security")) {
+    return "Seu usuario nao tem permissao para esta acao. Verifique se esta logado com o usuario correto.";
+  }
+
+  if (error.includes("duplicate key")) {
+    return "Ja existe um registro com estes dados. Revise antes de cadastrar de novo.";
+  }
+
+  if (error.includes("invalid input syntax")) {
+    return "Algum campo foi preenchido em formato invalido. Confira valores, datas e numeros.";
+  }
+
+  return error;
+}
+
+function ToastMessage({ toast }: { toast: Toast }) {
+  const styles: Record<ToastKind, string> = {
+    success: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    error: "border-red-200 bg-red-50 text-red-800",
+    warning: "border-amber-200 bg-amber-50 text-amber-800",
+    info: "border-line bg-white text-graphite",
+  };
+
+  return (
+    <div
+      aria-live="polite"
+      className={`fixed right-5 top-5 z-50 max-w-sm rounded-md border px-4 py-3 text-sm shadow-soft ${styles[toast.kind]}`}
+      role="status"
+    >
+      {toast.text}
+    </div>
+  );
+}
+
 export function SupabaseCrudPage({
   title,
   description,
@@ -117,12 +162,23 @@ export function SupabaseCrudPage({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<Toast | null>(null);
 
   const referenceFields = useMemo(
     () => fields.filter((field) => field.reference),
     [fields],
   );
+
+  function showToast(kind: ToastKind, text: string) {
+    setToast({ kind, text });
+  }
+
+  useEffect(() => {
+    if (!toast) return;
+
+    const timeout = window.setTimeout(() => setToast(null), 4200);
+    return () => window.clearTimeout(timeout);
+  }, [toast]);
 
   async function loadRows() {
     const client = supabase;
@@ -135,7 +191,7 @@ export function SupabaseCrudPage({
       .order(orderBy, { ascending: false });
 
     if (error) {
-      setMessage(`Erro ao carregar ${title.toLowerCase()}.`);
+      showToast("error", `Nao foi possivel carregar ${title.toLowerCase()}.`);
       setLoading(false);
       return;
     }
@@ -178,7 +234,7 @@ export function SupabaseCrudPage({
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) {
-      setMessage("Supabase ainda nao configurado.");
+      showToast("error", "Supabase ainda nao configurado.");
       setLoading(false);
       return;
     }
@@ -202,8 +258,18 @@ export function SupabaseCrudPage({
     const client = supabase;
     if (!client) return;
 
+    const missingField = fields.find((field) => {
+      const value = form[field.name];
+      return field.required && typeof value === "string" && value.trim() === "";
+    });
+
+    if (missingField) {
+      showToast("warning", `Preencha o campo obrigatorio: ${missingField.label}.`);
+      return;
+    }
+
     setSaving(true);
-    setMessage(null);
+    setToast(null);
 
     const payload = buildPayload(fields, form);
     const result = editingId
@@ -211,12 +277,15 @@ export function SupabaseCrudPage({
       : await client.from(table).insert(payload);
 
     if (result.error) {
-      setMessage(result.error.message);
+      showToast("error", humanizeError(result.error.message));
       setSaving(false);
       return;
     }
 
-    setMessage(editingId ? "Registro atualizado." : "Registro cadastrado.");
+    showToast(
+      "success",
+      editingId ? "Registro atualizado com sucesso." : "Registro cadastrado.",
+    );
     resetForm();
     await loadRows();
     await loadReferences();
@@ -237,21 +306,27 @@ export function SupabaseCrudPage({
 
     setEditingId(String(row.id));
     setForm(nextForm);
+    showToast("info", "Modo de edicao ativado. Revise os campos e salve.");
   }
 
   async function handleDelete(row: RowData) {
     const client = supabase;
     if (!client || !row.id) return;
-    const confirmed = window.confirm("Remover este registro?");
-    if (!confirmed) return;
-
-    const { error } = await client.from(table).delete().eq("id", row.id);
-    if (error) {
-      setMessage(error.message);
+    const confirmed = window.confirm(
+      "Remover este registro? Se ele estiver ligado a propostas ou vendas, o banco pode bloquear a remocao.",
+    );
+    if (!confirmed) {
+      showToast("info", "Remocao cancelada.");
       return;
     }
 
-    setMessage("Registro removido.");
+    const { error } = await client.from(table).delete().eq("id", row.id);
+    if (error) {
+      showToast("error", humanizeError(error.message));
+      return;
+    }
+
+    showToast("success", "Registro removido.");
     await loadRows();
   }
 
@@ -281,7 +356,13 @@ export function SupabaseCrudPage({
   }
 
   function handleExport() {
+    if (rows.length === 0) {
+      showToast("warning", "Nao ha registros nesta tabela para exportar.");
+      return;
+    }
+
     downloadCsv(`${table}.csv`, toCsv(rows, columns));
+    showToast("success", `CSV de ${title.toLowerCase()} exportado.`);
   }
 
   return (
@@ -307,14 +388,11 @@ export function SupabaseCrudPage({
         </button>
       </div>
 
-      {message ? (
-        <p className="rounded-md border border-line bg-white px-4 py-3 text-sm text-graphite shadow-soft">
-          {message}
-        </p>
-      ) : null}
+      {toast ? <ToastMessage toast={toast} /> : null}
 
       <form
         className="grid gap-4 rounded-lg border border-line bg-white p-5 shadow-soft lg:grid-cols-4"
+        noValidate
         onSubmit={handleSubmit}
       >
         {fields.map((field) => (
@@ -328,6 +406,7 @@ export function SupabaseCrudPage({
           >
             <span className="text-sm font-medium text-graphite">
               {field.label}
+              {field.required ? <span className="text-red-600"> *</span> : null}
             </span>
             {field.type === "textarea" ? (
               <textarea
