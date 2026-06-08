@@ -42,4 +42,10 @@ export const appModules: AppModule[] = [
     description: "Base CSV para Excel, Power BI, SQL e Python.",
     status: "proximo",
   },
+  {
+    href: "/dashboard/apoio-rafael",
+    label: "Apoio Rafael",
+    description: "Roteiro, checklist, exemplos e prompts para orientar a analise.",
+    status: "proximo",
+  },
 ];
