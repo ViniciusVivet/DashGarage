@@ -15,6 +15,11 @@ type CommercialKpis = {
   veiculos_disponiveis: number;
 };
 
+type VehicleStock = {
+  vendidos: number;
+  reservados: number;
+};
+
 const emptyKpis: CommercialKpis = {
   total_leads: 0,
   total_vendas: 0,
@@ -22,6 +27,11 @@ const emptyKpis: CommercialKpis = {
   ticket_medio: 0,
   margem_total: 0,
   veiculos_disponiveis: 0,
+};
+
+const emptyVehicleStock: VehicleStock = {
+  vendidos: 0,
+  reservados: 0,
 };
 
 const numberFormatter = new Intl.NumberFormat("pt-BR");
@@ -37,8 +47,14 @@ const percentFormatter = new Intl.NumberFormat("pt-BR", {
 
 export default function DashboardPage() {
   const [kpis, setKpis] = useState<CommercialKpis>(emptyKpis);
+  const [vehicleStock, setVehicleStock] =
+    useState<VehicleStock>(emptyVehicleStock);
   const [loadingKpis, setLoadingKpis] = useState(true);
+  const [loadingVehicleStock, setLoadingVehicleStock] = useState(true);
   const [kpiError, setKpiError] = useState<string | null>(null);
+  const [vehicleStockError, setVehicleStockError] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     async function loadKpis() {
@@ -72,6 +88,44 @@ export default function DashboardPage() {
     }
 
     loadKpis();
+  }, []);
+
+  useEffect(() => {
+    async function loadVehicleStock() {
+      if (!isSupabaseConfigured || !supabase) {
+        setVehicleStockError("Supabase ainda nao configurado.");
+        setLoadingVehicleStock(false);
+        return;
+      }
+
+      const [soldResult, reservedResult] = await Promise.all([
+        supabase
+          .from("veiculos")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "vendido"),
+        supabase
+          .from("veiculos")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "reservado"),
+      ]);
+
+      if (soldResult.error || reservedResult.error) {
+        setVehicleStockError(
+          "Nao foi possivel carregar os veiculos vendidos e reservados.",
+        );
+        setLoadingVehicleStock(false);
+        return;
+      }
+
+      setVehicleStock({
+        vendidos: soldResult.count ?? 0,
+        reservados: reservedResult.count ?? 0,
+      });
+      setVehicleStockError(null);
+      setLoadingVehicleStock(false);
+    }
+
+    loadVehicleStock();
   }, []);
 
   const metrics = useMemo(() => {
@@ -140,6 +194,58 @@ export default function DashboardPage() {
           {kpiError}
         </p>
       ) : null}
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold text-ink">Estoque comercial</h2>
+          <p className="mt-1 text-sm leading-6 text-graphite/70">
+            Acompanhe rapidamente os veiculos que ja foram vendidos e os que
+            estao reservados para negociacao.
+          </p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <Link
+            className="rounded-lg border border-line bg-white p-5 shadow-soft transition hover:-translate-y-0.5 hover:border-brand"
+            href="/dashboard/veiculos"
+          >
+            <p className="text-sm font-medium text-graphite/70">
+              Veiculos vendidos
+            </p>
+            <strong className="mt-3 block text-4xl font-semibold tracking-normal text-ink">
+              {loadingVehicleStock
+                ? "..."
+                : numberFormatter.format(vehicleStock.vendidos)}
+            </strong>
+            <p className="mt-2 text-sm leading-6 text-graphite/70">
+              Total de veiculos com status vendido no estoque.
+            </p>
+          </Link>
+
+          <Link
+            className="rounded-lg border border-line bg-white p-5 shadow-soft transition hover:-translate-y-0.5 hover:border-brand"
+            href="/dashboard/veiculos"
+          >
+            <p className="text-sm font-medium text-graphite/70">
+              Veiculos reservados
+            </p>
+            <strong className="mt-3 block text-4xl font-semibold tracking-normal text-ink">
+              {loadingVehicleStock
+                ? "..."
+                : numberFormatter.format(vehicleStock.reservados)}
+            </strong>
+            <p className="mt-2 text-sm leading-6 text-graphite/70">
+              Total de veiculos separados para clientes em negociacao.
+            </p>
+          </Link>
+        </div>
+
+        {vehicleStockError ? (
+          <p className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {vehicleStockError}
+          </p>
+        ) : null}
+      </section>
 
       <div className="grid gap-4 lg:grid-cols-3">
         {appModules.map((module) => (
