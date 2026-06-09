@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 
@@ -46,6 +47,14 @@ type SupabaseCrudPageProps = {
   fields: FieldConfig[];
   columns: ColumnConfig[];
   orderBy?: string;
+  urlFilters?: UrlFilterConfig[];
+};
+
+type UrlFilterConfig = {
+  param: string;
+  column: string;
+  label: string;
+  allowedValues: string[];
 };
 
 const currencyFormatter = new Intl.NumberFormat("pt-BR", {
@@ -153,12 +162,17 @@ export function SupabaseCrudPage({
   fields,
   columns,
   orderBy = "created_at",
+  urlFilters = [],
 }: SupabaseCrudPageProps) {
+  const pathname = usePathname();
   const [rows, setRows] = useState<RowData[]>([]);
   const [form, setForm] = useState<Record<string, string | boolean>>(() =>
     emptyForm(fields),
   );
   const [references, setReferences] = useState<ReferenceMap>({});
+  const [activeFilters, setActiveFilters] = useState<
+    { column: string; label: string; value: string }[]
+  >([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -180,15 +194,35 @@ export function SupabaseCrudPage({
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
+  useEffect(() => {
+    if (urlFilters.length === 0) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const filters = urlFilters.flatMap((filter) => {
+      const value = params.get(filter.param);
+
+      if (!value || !filter.allowedValues.includes(value)) {
+        return [];
+      }
+
+      return [{ column: filter.column, label: filter.label, value }];
+    });
+
+    setActiveFilters(filters);
+  }, [urlFilters]);
+
   async function loadRows() {
     const client = supabase;
     if (!client) return;
 
     setLoading(true);
-    const { data, error } = await client
-      .from(table)
-      .select("*")
-      .order(orderBy, { ascending: false });
+    let query = client.from(table).select("*");
+
+    activeFilters.forEach((filter) => {
+      query = query.eq(filter.column, filter.value);
+    });
+
+    const { data, error } = await query.order(orderBy, { ascending: false });
 
     if (error) {
       showToast("error", `Nao foi possivel carregar ${title.toLowerCase()}.`);
@@ -242,7 +276,7 @@ export function SupabaseCrudPage({
     loadReferences();
     loadRows();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [table]);
+  }, [table, activeFilters]);
 
   function updateField(name: string, value: string | boolean) {
     setForm((current) => ({ ...current, [name]: value }));
@@ -389,6 +423,23 @@ export function SupabaseCrudPage({
       </div>
 
       {toast ? <ToastMessage toast={toast} /> : null}
+
+      {activeFilters.length > 0 ? (
+        <div className="flex flex-col justify-between gap-3 rounded-md border border-brand/20 bg-brand/5 px-4 py-3 text-sm text-graphite md:flex-row md:items-center">
+          <span>
+            Filtro ativo:{" "}
+            {activeFilters
+              .map((filter) => `${filter.label} ${filter.value}`)
+              .join(", ")}
+          </span>
+          <a
+            className="font-semibold text-brand hover:text-ink"
+            href={pathname}
+          >
+            Limpar filtro
+          </a>
+        </div>
+      ) : null}
 
       <form
         className="grid gap-4 rounded-lg border border-line bg-white p-5 shadow-soft lg:grid-cols-4"

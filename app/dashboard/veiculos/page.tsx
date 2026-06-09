@@ -46,6 +46,14 @@ export default function VeiculosPage() {
       ]}
       table="veiculos"
       title="Veiculos"
+      urlFilters={[
+        {
+          param: "status",
+          column: "status",
+          label: "status",
+          allowedValues: ["disponivel", "reservado", "vendido"],
+        },
+      ]}
     />
   );
 }

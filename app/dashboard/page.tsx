@@ -207,7 +207,7 @@ export default function DashboardPage() {
         <div className="grid gap-4 md:grid-cols-2">
           <Link
             className="rounded-lg border border-line bg-white p-5 shadow-soft transition hover:-translate-y-0.5 hover:border-brand"
-            href="/dashboard/veiculos"
+            href="/dashboard/veiculos?status=vendido"
           >
             <p className="text-sm font-medium text-graphite/70">
               Veiculos vendidos
