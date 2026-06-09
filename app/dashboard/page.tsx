@@ -224,7 +224,7 @@ export default function DashboardPage() {
 
           <Link
             className="rounded-lg border border-line bg-white p-5 shadow-soft transition hover:-translate-y-0.5 hover:border-brand"
-            href="/dashboard/veiculos"
+            href="/dashboard/veiculos?status=reservado"
           >
             <p className="text-sm font-medium text-graphite/70">
               Veiculos reservados
